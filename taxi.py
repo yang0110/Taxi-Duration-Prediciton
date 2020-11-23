@@ -370,7 +370,7 @@ ada_y = ada.predict(x_test)
 ada_yt = ada.predict(x_train)
 
 from sklearn.ensemble import RandomForestRegressor
-rf = RandomForestRegressor()
+rf = RandomForestRegressor(max_depth=5)
 rf.fit(x_train, y_train)
 rf_y = rf.predict(x_test)
 rf_yt = rf.predict(x_train)
@@ -426,6 +426,7 @@ class MLP(nn.Module):
     nn.Linear(input_size, 64), 
     nn.ReLU(), 
     nn.Linear(64, 32), 
+    nn.ReLU(),
     nn.Linear(32, output_size),
     )
 
@@ -436,10 +437,10 @@ class MLP(nn.Module):
 
 nn_model = MLP(x_train.shape[1], 1)
 cost = nn.MSELoss()
-optimizer = optim.Adam(nn_model.parameters(), lr=0.01)
+optimizer = optim.Adam(nn_model.parameters(), lr=0.001)
 loss_list = []
 
-epoch_num = 30
+epoch_num = 300
 for epoch in range(epoch_num):
   for x_batch, y_batch in train_dl:
       pred = nn_model(x_batch)
@@ -458,10 +459,17 @@ nn_train_error = np.sqrt(mean_squared_error(nn_yt, y_train_array))
 print('train_error, test_error', nn_train_error, nn_test_error)
 train_error_list.append(nn_train_error)
 test_error_list.append(nn_test_error)
-
+#0.39, 0.44
+plt.figure(figsize=(6,4))
+plt.plot(loss_list)
+plt.xlabel('Epcoh num', fontsize=12)
+plt.ylabel('Loss',fontsize=12)
+plt.tight_layout()
+plt.savefig(result_path+'nn_learning_curve'+'.png', dpi=100)
+plt.show()
 
 import xgboost as xgb
-N=10000
+# N=50000
 # mod_train = train[used_columns]
 x = mod_train.iloc[:N, :-1].values
 y = mod_train.iloc[:N, -1].values
@@ -477,32 +485,32 @@ dvalid = xgb.DMatrix(x_val, label=y_val)
 dtest = xgb.DMatrix(x_test, label=y_test)
 
 watchlist = [(dtrain, 'train'), (dvalid, 'valid')]
-xgb_pars = {'min_child_weight': 50, 'eta':0.3, 'colsample_bytree': 0.3, 'max_depth': 4, 'subsample': 0.8, 'lambda': 1, 'booster': 'gbtree', 'eval_metric': 'rmse', 'objective':'reg:linear'}
+xgb_pars = {'min_child_weight': 10, 'eta': 0.01, 'colsample_bytree': 0.3, 'max_depth': 6, 'subsample': 0.5, 'lambda': 1, 'booster': 'gbtree', 'eval_metric': 'rmse', 'objective':'reg:squarederror'}
 
-model = xgb.train(xgb_pars, dtrain, 100, watchlist, early_stopping_rounds=50, maximize=False, verbose_eval=10)
-# print('Modeling RMSLE %.5f' % model.best_score)
+model = xgb.train(xgb_pars, dtrain, 2000, watchlist, early_stopping_rounds=50, maximize=False, verbose_eval=10)
+print('Modeling RMSLE %.5f' % model.best_score)
 xgb_train_error = model.best_score
 xgb_y = model.predict(dtest)
 xgb_test_error = np.sqrt(mean_squared_error(xgb_y, y_test))
 print('train error %s, test_error %s'%(xgb_train_error, xgb_test_error))
 train_error_list.append(xgb_train_error)
 test_error_list.append(xgb_test_error)
-
+# 0.37, 0.39
 
 
 import lightgbm as lgb
 d_train = lgb.Dataset(x_train, y_train)
 lgb_params = {
-    'learning_rate': 0.2, # try 0.2
-    'max_depth': 4,
-    'num_leaves': 10, 
-    'objective': 'regression',
-    'metric': {'rmse'},
-    'feature_fraction': 0.9,
-    'bagging_fraction': 0.5,
-    #'bagging_freq': 5,
-    'max_bin': 20}       # 1000
-n_rounds = 10
+              'learning_rate': 0.1, # try 0.2
+              'max_depth': 5,
+              'num_leaves': 10, 
+              'objective': 'regression',
+              'metric': {'rmse'},
+              'feature_fraction': 0.5,
+              'bagging_fraction': 0.5,
+              #'bagging_freq': 5,
+              'max_bin': 100}       # 1000
+n_rounds = 100
 model_lgb = lgb.train(lgb_params, 
                       d_train, 
                       # feval=lgb_rmsle_score, 
@@ -512,12 +520,13 @@ light_yt = model_lgb.predict(x_train)
 light_y = model_lgb.predict(x_test)
 light_train_error = np.sqrt(mean_squared_error(light_yt, y_train))
 light_test_error = np.sqrt(mean_squared_error(light_y, y_test))
-print('light train error %s, light test error %s'%(light_train_error, light_test_error))
+print('train error %s, test error %s'%(light_train_error, light_test_error))
 train_error_list.append(light_train_error)
 test_error_list.append(light_test_error)
 
 model_list = ['lr', 'ridge', 'lasso', 'poly_lr', 'svm', 'svm_rbf', 'decision tree', 'knn', 'adaboost', 'random forest', 'nn', 'xgboost', 'lightbgm']
-
+print('models train error', train_error_list)
+print('models test error', test_error_list)
 plt.figure(figsize=(6,4))
 plt.bar(np.arange(len(model_list)), train_error_list, width=0.2,  color='lightblue', align='center', label='Train')
 plt.bar(np.arange(len(model_list))-0.2, test_error_list, width=0.2, color='y', align='center', label='Test')
@@ -530,3 +539,5 @@ plt.tight_layout()
 plt.savefig(result_path+'models_error'+'.png', dpi=100)
 plt.show()
 
+#models train error [0.6013599518650662, 0.6014082819055208, 0.6475190748543749, 0.5092668066488578, 0.4457634185693864, 0.4457634185693864, 0.49651048477502346, 0.5616639000820584, 0.4966186291973662, 0.45684375286468004, 0.38533719314699144, 0.481919, 0.384659218368034]
+#models test error [0.5591325876082729, 0.5591592374453985, 0.6015741536508901, 0.7416791749281934, 0.4584919641417047, 0.4584919641417047, 0.5052637468808265, 0.6056340034203053, 0.5209706906928969, 0.4771346913889011, 0.4852695048116297, 0.4176672330467144, 0.4240023085171282]
